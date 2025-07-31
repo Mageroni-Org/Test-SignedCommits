@@ -1,0 +1,78 @@
+name: Change Default Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Name of the branch to set as default'
+        required: true
+        type: string
+        default: 'main'
+
+jobs:
+  change-default-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          
+      - name: Validate target branch exists
+        run: |
+          if ! git show-ref --verify --quiet refs/remotes/origin/${{ inputs.target_branch }}; then
+            echo "Error: Branch '${{ inputs.target_branch }}' does not exist on remote"
+            exit 1
+          fi
+          echo "✓ Branch '${{ inputs.target_branch }}' exists"
+          
+      - name: Get current default branch
+        id: current-default
+        run: |
+          current_branch=$(gh api repos/${{ github.repository }} --jq '.default_branch')
+          echo "current_branch=$current_branch" >> $GITHUB_OUTPUT
+          echo "Current default branch: $current_branch"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          
+      - name: Change default branch
+        run: |
+          if [ "${{ steps.current-default.outputs.current_branch }}" = "${{ inputs.target_branch }}" ]; then
+            echo "Branch '${{ inputs.target_branch }}' is already the default branch"
+            exit 0
+          fi
+          
+          echo "Changing default branch from '${{ steps.current-default.outputs.current_branch }}' to '${{ inputs.target_branch }}'"
+          
+          gh api \
+            --method PATCH \
+            /repos/${{ github.repository }} \
+            -f default_branch='${{ inputs.target_branch }}'
+            
+          echo "✓ Successfully changed default branch to '${{ inputs.target_branch }}'"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          
+      - name: Verify change
+        run: |
+          new_default=$(gh api repos/${{ github.repository }} --jq '.default_branch')
+          echo "New default branch: $new_default"
+          
+          if [ "$new_default" = "${{ inputs.target_branch }}" ]; then
+            echo "✓ Verification successful: Default branch is now '${{ inputs.target_branch }}'"
+          else
+            echo "✗ Verification failed: Expected '${{ inputs.target_branch }}', got '$new_default'"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
