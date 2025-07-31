@@ -1,3 +1,3 @@
-# Test-Meli-SignedCommits
+# Test-SignedCommits
 
 test signed commits
